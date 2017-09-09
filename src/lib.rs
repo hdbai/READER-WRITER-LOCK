@@ -320,7 +320,7 @@ impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
             let global = self.lock.global.get();
             let writer_active = (*global).writer_active;
             if writer_active > 0 {
-                (*global).writer_active -= 1;
+                (*global).writer_active += 1;
             }
             self.lock.notify_others();
         }
