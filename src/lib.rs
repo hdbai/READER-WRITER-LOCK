@@ -104,28 +104,25 @@ impl<T> RwLock<T> {
 
     pub fn read(&self) -> Result<RwLockReadGuard<T>, ()> {
         let mut guard = self.lock.lock().unwrap();
-        let cond_var = Rc::new(Condvar::new());
+        let cond_var = Rc::new(Condvar::new());  // wrap in Rc because cond_var will move to while loop
         let global = self.global.get();
         unsafe {
             (*global).reader_wait.push(cond_var.clone());
         }
+
+        //hold current thread until while loop is unsafisfied
         while self.read_wait() {
             guard = cond_var.wait(guard).unwrap();
         }
-
-        match self.order {
-            Order::Fifo => {
-                unsafe{
+        unsafe {
+            match self.order {
+                Order::Fifo => {
                     (*global).reader_wait.remove(0);
-                }
-            },
-            Order::Lifo => {
-                unsafe{
+                },
+                Order::Lifo => {
                     (*global).reader_wait.pop();
                 }
             }
-        }
-        unsafe{
             (*global).reader_active += 1;
         }
         Ok(
@@ -191,7 +188,7 @@ impl<T> RwLock<T> {
         )
     }
 
-    pub fn notify_others(&self) {
+    pub fn done(&self) {
         match self.pref {
             Preference::Reader => {
                 unsafe {
@@ -200,7 +197,7 @@ impl<T> RwLock<T> {
                     match self.order {
                         Order::Fifo => {
                             if reader_wait.len() > 0 {
-                                for i in 0..reader_wait.len() {
+                                for i in 0..reader_wait.len() { //order dont matter since all the readers will be notified
                                     reader_wait[i].notify_one();
                                 }
                             }
@@ -209,13 +206,13 @@ impl<T> RwLock<T> {
                             }
                         },
                         Order::Lifo => {
-                            if reader_wait.len() > 0 {
+                            if reader_wait.len() > 0 {  //order dont matter since all the readers will be notified
                                 for i in 0..reader_wait.len() {
                                     reader_wait[i].notify_one();
                                 }
                             }
                             else if writer_wait.len() > 0 {
-                                writer_wait[writer_wait.len()-1].notify_one(); //FIFO
+                                writer_wait[writer_wait.len()-1].notify_one(); //LIFO
                             }
                         },
                     }
@@ -241,7 +238,7 @@ impl<T> RwLock<T> {
                                 writer_wait[writer_wait.len()-1].notify_one();
                             }
                             else if reader_wait.len() > 0 {
-                                for i in (0..reader_wait.len()).rev() {
+                                for i in 0..reader_wait.len() {
                                     reader_wait[i].notify_one();
                                 }
                             }
@@ -286,7 +283,7 @@ impl<'a, T> Drop for RwLockReadGuard<'a, T> {
             if reader_active > 0 {
                 (*global).reader_active -= 1;
             }
-            self.lock.notify_others();
+            self.lock.done();
          }
     }
 }
@@ -322,7 +319,7 @@ impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
             if writer_active > 0 {
                 (*global).writer_active -= 1;
             }
-            self.lock.notify_others();
+            self.lock.done();
         }
     }
 }
