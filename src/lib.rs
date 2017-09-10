@@ -210,7 +210,7 @@ impl<T> RwLock<T> {
                         },
                         Order::Lifo => {
                             if reader_wait.len() > 0 {
-                                for i in (0..reader_wait.len()).rev() {
+                                for i in 0..reader_wait.len() {
                                     reader_wait[i].notify_one();
                                 }
                             }
@@ -320,7 +320,7 @@ impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
             let global = self.lock.global.get();
             let writer_active = (*global).writer_active;
             if writer_active > 0 {
-                (*global).writer_active += 1;
+                (*global).writer_active -= 1;
             }
             self.lock.notify_others();
         }
